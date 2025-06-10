@@ -1,0 +1,3 @@
+[submodule "src/UPF4ROS2"]
+	path = src/UPF4ROS2
+	url = https://github.com/PlanSys2/UPF4ROS2
