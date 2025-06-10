@@ -11,8 +11,9 @@
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>geographic_msgs</depend>
-  <depend>up_msgs</depend>
+  <depend>upf_msgs</depend>
   <depend>auspex_msgs</depend>
+  <depend>auspex_db_client</depend>
   <depend>tf_transformations</depend>
 
   <test_depend>ament_copyright</test_depend>

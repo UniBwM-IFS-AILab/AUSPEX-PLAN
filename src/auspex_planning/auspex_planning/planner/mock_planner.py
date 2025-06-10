@@ -2,15 +2,17 @@
 from fractions import Fraction
 import copy
 import os
-from auspex_msgs.msg import ActionInstance, Plan
-from up_msgs.msg import (
+from auspex_msgs.msg import ActionInstance, Plan, ActionStatus
+from upf_msgs.msg import (
     Atom,
     Real
 )
 import json
+from .converter import enum_to_str
 from .planner_base import PlannerBase
 
 class Mock_Planner(PlannerBase):
+    planner_key = 'mock_planner'
     """
     Ros2 node used to create a mock plan
 
@@ -25,16 +27,10 @@ class Mock_Planner(PlannerBase):
         print("Initialized mock planner...")
         pass
 
-    def feedback(self, team_id, platform_id, feedback_msg):
+    def feedback(self, team_id, feedback_msg):
         pass
 
-    def result(self, team_id, platform_id, result_msg):
-        pass
-
-    def update_state(self, state):
-        """
-        Update initial state
-        """
+    def result(self, team_id, result_msg):
         pass
 
     def plan_rth(self, team_id):
@@ -44,14 +40,17 @@ class Mock_Planner(PlannerBase):
             vhcl_dict = self._kb_client.query('platform', 'platform_id', 'team_id', team_id)
         elif(team_id.lower() == "all"):
             vhcl_dict = self._kb_client.query('platform', 'platform_id')
-            
+
         for vhcl in vhcl_dict:
-            rth_platform = copy.deepcopy(rth_template)
-            rth_platform.platform_id = vhcl['platform_id']
-            rth_platform.team_id = team_id
-            action_list.append(rth_platform)
+            rth_mission_platform = copy.deepcopy(rth_template)
+            rth_mission_platform.platform_id = vhcl['platform_id']
+            rth_mission_platform.team_id = team_id
+            rth_mission_platform.priority = 10
+            for action in rth_mission_platform.tasks:
+                action.parameters[0].symbol_atom = [vhcl['platform_id']]
+            action_list.append(rth_mission_platform)
         return action_list
-    
+
 
     def plan_mission(self, team_id):
         """
@@ -59,7 +58,7 @@ class Mock_Planner(PlannerBase):
         """
         print(f"[INFO]: Mock Planner Selected. Loading Mission from JSON.")
         return self.load_mission_from_json(jsonpath=self._auspex_params_path+'mock_mission.json')
-    
+
     def load_mission_from_json(self,jsonpath):
         """
         Reads a JSON file and converts it into the up_msg format (list of Plan objects).
@@ -68,14 +67,14 @@ class Mock_Planner(PlannerBase):
             mission_data = json.load(file)
 
         platform_plans = []
-        
+
         for platform in mission_data:
-            planned_actions = []
+            planned_tasks = []
             for id_a, action in enumerate(platform["actions"]):
                 new_action = ActionInstance()
                 new_action.action_name = action["action_name"]
-                new_action.id = str(id_a)
-                new_action.status = ActionInstance.ACTION_INACTIVE
+                new_action.id = id_a
+                new_action.status = enum_to_str(ActionStatus, ActionStatus.INACTIVE)
 
                 new_parameters = []
                 atom = Atom()
@@ -106,10 +105,11 @@ class Mock_Planner(PlannerBase):
                     new_parameters.append(atom)
 
                 new_action.parameters = new_parameters
-                planned_actions.append(new_action)
+                planned_tasks.append(new_action)
 
             plan_msg = Plan()
-            plan_msg.actions = planned_actions
+            plan_msg.tasks = planned_tasks
+            plan_msg.priority = 0
             plan_msg.platform_id = platform["platform_id"]
             plan_msg.team_id = platform["team_id"]
             platform_plans.append(plan_msg)

@@ -59,43 +59,6 @@ def precompute_average_distances(melted_df):
 
     return avg_distances
 
-'''
-Reads a json file and parses it to a panda dataframe
-'''
-def parseJsonFile(file):
-    with open(file) as json_file:
-        try:
-            config_list = json.load(json_file)
-        except json.JSONDecodeError as exc:
-            #logging.debug(exc)
-            return None
-
-    home = None  # to store the 'home' entry
-    data = {
-        "Locations": [],
-        "Lat": [],
-        "Long": [],
-        "Alt": []
-    }
-
-    # Process each dictionary in the list
-    for entry in config_list:
-        # Check if the entry is for 'home'
-        if entry.get("name") == "home":
-            home = entry
-        else:
-            data["Locations"].append(entry.get("name"))
-            centre = entry.get("centre", [])
-            if len(centre) >= 3:
-                data["Lat"].append(centre[0])
-                data["Long"].append(centre[1])
-                data["Alt"].append(centre[2])
-
-    melted_df = pd.DataFrame(data)
-    melted_df = melted_df.reset_index(drop=True)
-
-    return home, melted_df
-
 def calculate_route_length_check(home_coordinates, route, melted_df):
     total_length=0
         # if isinstance(route,pd.Series):
@@ -141,7 +104,7 @@ def plot_parameter(csv_path):
 
     parameters = df['Parameters']
     best_cost = df['Best Cost']
-    best_iteration = df['Best Solution Iteration']    
+    best_iteration = df['Best Solution Iteration']
 
     plt.figure(figsize=(10,6))
     scatter=plt.scatter(best_iteration,best_cost)
@@ -164,8 +127,8 @@ def write_to_csv(data, file_name='results.csv'):
     """
     # Define the CSV header as a list of column names.
 
-    header = ['Parameters', 'Iterations', 
-              'Best Solution Iteration', 'Duration', 'Best Cost', 
+    header = ['Parameters', 'Iterations',
+              'Best Solution Iteration', 'Duration', 'Best Cost',
               'Number of Destroy', 'Number of Repair']
 
     # Check if the file exists
@@ -234,7 +197,7 @@ def write_to_json(vehicle_routes):
             route_list = route['Route'].split(',')
         else:
             route_list = list(route['Route'])
-        
+
         vehicle_dict = {
             "name": vehicle,
             "route": route_list
@@ -245,10 +208,10 @@ def write_to_json(vehicle_routes):
         json.dump(vehicles_json,json_file,indent=4)
 
     logging.info("JSON data has been written to vehicle_routes.json")
-    
-    
-    
-    
+
+
+
+
 '''
 visualization below works perfectly for the first routes of the vehicles
 '''
@@ -269,7 +232,7 @@ def visualize_routes_and_locations(G, vehicle_routes, home_coordinates, location
 
     vehicle_routes_vis = copy_dataframe(vehicle_routes)
     G_copy = copy.deepcopy(G)
-    
+
     for index, row in vehicle_routes_vis.iterrows():
         existing_route= row['Route']
         existing_route.insert(0, 'home')

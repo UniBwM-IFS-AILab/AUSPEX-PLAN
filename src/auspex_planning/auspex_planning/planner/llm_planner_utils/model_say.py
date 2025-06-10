@@ -1,49 +1,106 @@
-from .llm_models import *
+import copy
+
+import concurrent
+import numpy as np
+from .gpt_models import MultiLLMClient
 
 class SayModel():
-    def __init__(self, use_llm="gpt"):
+    def __init__(self, provider: str = "openai", model: str = "gpt-4o-mini"):
         '''
         LLM interface
         '''
-        if use_llm == "gpt":
-            self._llm = GPT_Interface()
-        elif use_llm == "claude":
-            self._llm = CLAUDE_Interface()
-        elif use_llm == "gemini":
-            self._llm = Gemini_Interface()
-        # elif use_llm == "llama":
-        #     self._llm = Llama_Interface()
-        # elif use_llm == "llama2":
-        #     self._llm = Llama2_Interface()
-    
+        self._llm = MultiLLMClient(provider, model)
 
-    def compute_llm_score(self, system_prompt, state, llm_use_state, actions, _synchronous_calls=False):
+    def compute_llm_score(self, system_prompt:str, actions:list, state = None, synchronous_call=False):
         print(f'Now thinking ... ')
-        
-        print("Getting best results...\n")
-        if llm_use_state:
-            state_str = f'The current state of the quadcopter is {state._airborne_state}'# and it is at waypoint {state._currentWaypoint}.'
 
-            CLASSIFICATION_PROMPT = """You will be given a possible next skill for this drone control scenario.
-            Classify whether this skill, is useful for completing the given higher goal, into one of the two categories: TRUE and FALSE.
+        print("Getting best results...\n")
+        if state is not None:
+            state_str = f'The current state of the quadcopter is {state}'
+
+            user_prompt = """You will be given a possible next action for this drone control scenario.
+            Classify whether this action, is useful for completing the given higher goal, into one of the two categories: TRUE and FALSE.
             Thereby, take the previous actions and the final goal into account.
             Return only the name of the category, and nothing else.
             MAKE SURE your output is one of the two categories stated.""" + state_str + """
-            The possible next skill to be classified: {next_skill}"""
+            The possible next action to be classified: {next_action}"""
         else:
-            CLASSIFICATION_PROMPT = """You will be given a possible next skill for this drone control scenario.
-            Classify whether this skill, is useful for completing the given higher goal, into one of the two categories: TRUE and FALSE.
+            user_prompt = """You will be given a possible next action for this drone control scenario.
+            Classify whether this action, is useful for completing the given higher goal, into one of the two categories: TRUE and FALSE.
             Thereby, take the previous actions and the final goal into account.
             Return only the name of the category, and nothing else.
             MAKE SURE your output is one of the two categories stated.
-            The possible next skill to be classified: {next_skill}"""
-        
-        if _synchronous_calls:
-            scores_percent = self._llm.request_llm_sync(system_prompt, CLASSIFICATION_PROMPT, actions)
+            The possible next action to be classified: {next_action}"""
+
+        if synchronous_call:
+            scores_percent = self.query_sync(system_prompt, user_prompt, actions)
         else:
-            scores_percent = self._llm.request_llm_parallel(system_prompt, CLASSIFICATION_PROMPT, actions)
-        print("Done.")
+            scores_percent = self.query_async(system_prompt, user_prompt, actions)
         return scores_percent
 
-    def parseNL2Param(self, nl, detections, detection_color, locations, hl_skills):
-        return self._llm.parseNL2Param(nl, detections, detection_color,locations, hl_skills)
+
+    def query_sync(self, system_prompt:str, user_prompt:str, actions:list):
+        """
+        Query the LLM synchronously.
+        """
+        messages = [{"role": "system", "content": system_prompt}]
+        scores = []
+        for action in actions:
+            mod_messages = copy.deepcopy(messages)
+            mod_messages.append({"role": "user", "content": user_prompt.format(next_action=action)})
+
+            response = self._llm.query(prompt=mod_messages, max_tokens=50)
+            prob = response["logprobs"][0].logprob
+            if prob is None:
+                prob = 0.0
+                if 'true' in response["response"].lower():
+                    prob = 1.0
+            else:
+                prob = np.exp(prob)
+                if 'false' in response["response"].lower():
+                    prob = 1 - prob
+
+            scores.append(prob)
+
+        scores_percent = np.array(scores) / np.sum(scores)
+        return scores_percent
+
+
+    def query_async(self, system_prompt:str, user_prompt:str, actions:list):
+        """
+        Query the LLM asynchronously.
+        """
+        messages = [{"role": "system", "content": system_prompt}]
+        scores = [None] * len(actions)  # Placeholder for results to maintain order
+        futures = []
+        batch_size = 150
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            for batch_start in range(0, len(actions), batch_size):
+                batch = actions[batch_start:min(batch_start + batch_size, len(actions))]
+                for i, action in enumerate(batch, start=batch_start):
+                    mod_messages = copy.deepcopy(messages)
+                    mod_messages.append({"role": "user", "content": user_prompt.format(next_action=action)})
+                    futures.append(executor.submit(self.process_message, i, mod_messages))
+
+                for future in concurrent.futures.as_completed(futures):
+                    index, prob = future.result()
+                    scores[index] = prob
+        scores_percent = np.array(scores) / np.sum(scores)
+        return scores_percent
+
+    def process_message(self, index, message):
+        """
+        Process a message and return the index and probability.
+        """
+        response = self._llm.query(prompt=message, max_tokens=50)
+        prob = response["logprobs"][0].logprob
+        if prob is None:
+            prob = 0.0
+            if 'true' in response["response"].lower():
+                prob = 1.0
+        else:
+            prob = np.exp(prob)
+            if 'false' in response["response"].lower():
+                prob = 1 - prob
+        return index, prob

@@ -1,7 +1,8 @@
 # AUSPEX-PLAN
 A planner repository for AUSPEX.
 
-To cite **AUSPEX-PLAN**, please use the following reference: 
+For detailed instructions see the main repository [AUSPEX](https://github.com/UniBwM-IFS-AILab/AUSPEX).
+To cite **AUSPEX-PLAN**, please use the following reference:
 ```
 @article{Doeschl-et-al:2025:AUSPEX,
   author = {Bj{\"o}rn D{\"o}schl and Kai Sommer and Jane Jean Kiam},

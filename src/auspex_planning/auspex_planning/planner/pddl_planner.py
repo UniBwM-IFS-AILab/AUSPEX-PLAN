@@ -5,25 +5,27 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 
 from ament_index_python.packages import get_package_share_directory
+from upf_msgs import msg as msgs
+from .converter import AUSPEXConverter
 
-from up4ros2.ros2_interface_reader import ROS2InterfaceReader
-from up4ros2.ros2_interface_writer import ROS2InterfaceWriter
-from up_msgs import msg as msgs
+from upf4ros2.ros2_interface_reader import ROS2InterfaceReader
+from upf4ros2.ros2_interface_writer import ROS2InterfaceWriter
 
 from .planner_base import PlannerBase
 from auspex_msgs.msg import ActionInstance, Plan
 
-from up_msgs.action import (
+from upf_msgs.action import (
     PDDLPlanOneShot
 )
 
-from up_msgs.srv import (
+from upf_msgs.srv import (
     GetProblem,
     SetInitialValue,
 )
-from up_msgs.srv import PDDLPlanOneShot as PDDLPlanOneShotSrv
+from upf_msgs.srv import PDDLPlanOneShot as PDDLPlanOneShotSrv
 
 class PDDL_Planner(PlannerBase, Node):
+    planner_key = 'pddl_planner'
     """
     Ros2 node used to create a plan
 
@@ -36,6 +38,11 @@ class PDDL_Planner(PlannerBase, Node):
         super().__init__('PDDL_Planner_Default')
         self._kb_client = kb_client
 
+        self._converter = AUSPEXConverter()
+
+        self._ros2_interface_writer = ROS2InterfaceWriter()
+        self._ros2_interface_reader = ROS2InterfaceReader()
+
         #####################################
         #           static init             #
         #####################################
@@ -46,7 +53,7 @@ class PDDL_Planner(PlannerBase, Node):
 
         self._domain = self.get_parameter('domain')
         self._problem = self.get_parameter('problem')
-        self._platform_id = "vhcl0"
+        self._platform_id = "simulation_0"
 
         # stores the problem instance in UPF format
         self._problem = None
@@ -59,21 +66,15 @@ class PDDL_Planner(PlannerBase, Node):
         # stores the plan as a sequence of UPF actions
         self._plan = []
 
-        # can be used to translate from UPF representation to ros msg
-        self._ros2_interface_writer = ROS2InterfaceWriter()
-
-        # can be used to translate from ros msg to UPF representation
-        self._ros2_interface_reader = ROS2InterfaceReader()
-
         self.sub_node = rclpy.create_node('sub_node_ppdl_planner_' + self._platform_id, use_global_arguments=False)
 
 
-        self._plan_pddl_one_shot_client = ActionClient(self, PDDLPlanOneShot, 'up4ros2/action/planOneShotPDDL')
+        self._plan_pddl_one_shot_client = ActionClient(self, PDDLPlanOneShot, 'upf4ros2/action/planOneShotPDDL')
 
         # create up4ros service clients
-        self._get_problem = self.sub_node.create_client(GetProblem, 'up4ros2/srv/get_problem')
-        self._set_initial_value = self.sub_node.create_client(SetInitialValue, 'up4ros2/srv/set_initial_value')
-        self._plan_pddl_one_shot_client_srv = self.sub_node.create_client(PDDLPlanOneShotSrv, 'up4ros2/srv/planOneShotPDDL')
+        self._get_problem = self.sub_node.create_client(GetProblem, 'upf4ros2/srv/get_problem')
+        self._set_initial_value = self.sub_node.create_client(SetInitialValue, 'upf4ros2/srv/set_initial_value')
+        self._plan_pddl_one_shot_client_srv = self.sub_node.create_client(PDDLPlanOneShotSrv, 'upf4ros2/srv/planOneShotPDDL')
 
     def set_initial_value(self, fluent, object, value_fluent):
         """
@@ -82,7 +83,7 @@ class PDDL_Planner(PlannerBase, Node):
         :param fluent: the fluent to be updated (e.g. fluent: drone_at)
         :param object: the object(s) for the fluent (e.g. object: waypoint)
         :param value_fluent: the new value (of type <object>) assigned to the fluent (e.g. forest1)
-        """        
+        """
         srv = SetInitialValue.Request()
         srv.expression = self._ros2_interface_writer.convert(fluent(*object))
 
@@ -97,26 +98,28 @@ class PDDL_Planner(PlannerBase, Node):
 
         srv.value = value
 
-        self._set_initial_value.wait_for_service()
+        while not self._set_initial_value.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Waiting for _set_initial_value to come online...')
+
         future = self._set_initial_value.call_async(srv)
         rclpy.spin_until_future_complete(self.sub_node, future)
 
-    def feedback(self, team_id, platform_id, feedback_msg):
+    def feedback(self, team_id, feedback_msg):
         pass
 
-    def result(self, team_id, platform_id, result_msg):
+    def result(self, team_id, result_msg):
         pass
 
     def update_state(self, state):
         """
         Updates the problem with all the effects from an executed action
 
-        :param up_msgs/Action action: the executed action with it's associated effects
+        :param upf_msgs/Action action: the executed action with it's associated effects
         :param parameters: the parameters (i.e. objects) of the executed action
-        """       
-        action, parameters = state 
+        """
+        action, parameters = state
         action = self.getActionsOfProblem(action.action_name)
-        self.get_logger().info("Updating initial state") 
+        self.get_logger().info("Updating initial state")
         # maps identifiers of action parameters to their concrete instance
         # e.g. x : myuav, y : urbanArea, z : home
         paramMap = {action.parameters[i].name : parameters[i]  for i in range(len(parameters))}
@@ -155,11 +158,13 @@ class PDDL_Planner(PlannerBase, Node):
         Retrieves the current state of the problem from the up4ros problem manager
 
         :returns: problem: The current state of the problem
-        :rtype: up_msgs/Problem
+        :rtype: upf_msgs/Problem
         """
         srv = GetProblem.Request()
 
-        self._get_problem.wait_for_service()
+        while not self._get_problem.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Waiting for _get_problem to come online...')
+
         future = self._get_problem.call_async(srv)
         rclpy.spin_until_future_complete(self.sub_node, future)
         problem = self._ros2_interface_reader.convert(future.result().problem)
@@ -168,7 +173,7 @@ class PDDL_Planner(PlannerBase, Node):
     def get_plan_from_pddl(self):
         """
         This function reads in the pddl domain file and pddl problem file as specified in the init function.
-        These files are then passed to up4ros2 main where a plan is calculated. The resulting plan (along with actions, objects, fluents)
+        These files are then passed to upf4ros2 main where a plan is calculated. The resulting plan (along with actions, objects, fluents)
         are then saved in this node, so the plan can be executed.
 
         """
@@ -181,7 +186,8 @@ class PDDL_Planner(PlannerBase, Node):
         srv.plan_request.problem = (get_package_share_directory('auspex_planning')
                                         + str(self._problem.value))
 
-        self._plan_pddl_one_shot_client_srv.wait_for_service()
+        while not self._plan_pddl_one_shot_client_srv.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Waiting for _plan_pddl_one_shot_client_srv to come online...')
         future = self._plan_pddl_one_shot_client_srv.call_async(srv)
 
         #waits till plan computed
@@ -210,28 +216,23 @@ class PDDL_Planner(PlannerBase, Node):
         """
         return self._actions[action]
 
-    def copy_up2auspex(self, actions):
-        print(actions)
-        parsed_plan = []
-        for action in actions:
-            new_action = ActionInstance()
-            new_action.id = action.id
-            new_action.action_name = action.action_name
-            new_action.parameters = action.parameters   
-            new_action.status = ActionInstance.ACTION_INACTIVE
-            parsed_plan.append(new_action)
-        return parsed_plan
-
     def plan_mission(self, team_id):
         """
         Launch a computation of the plan
         """
+        vhcl_dict = self._kb_client.query('platform', 'platform_id', 'team_id', team_id)
+        if not vhcl_dict:
+            return []
+        platform_id = vhcl_dict[0]['platform_id']
+
         self.get_logger().info(f"[INFO]: PDDL Planner Selected for team : {team_id}")
+
         plans = []
-        plan = Plan()
-        plan.platform_id = "vhcl0"
-        plan.team_id = team_id
-        plan.actions = self.copy_up2auspex(self.get_plan_from_pddl())
-        plans.append(plan)
-        self.get_logger().info("[INFO]: Computed plan.")
+        plan_msg = Plan()
+        plan_msg.tasks = self._converter.convert_plan_upf2auspex(self.get_plan_from_pddl())
+        plan_msg.platform_id = platform_id
+        plan_msg.priority = 0
+        plan_msg.team_id = team_id
+        self.get_logger().info(f"[INFO]: Found Plan")
+        plans.append(plan_msg)
         return plans

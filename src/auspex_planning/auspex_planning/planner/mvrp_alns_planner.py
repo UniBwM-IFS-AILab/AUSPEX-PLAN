@@ -1,7 +1,7 @@
 from .planner_base import PlannerBase
 from ament_index_python.packages import get_package_share_directory
 from auspex_msgs.msg import ActionInstance, Plan, PlatformClass
-from .alns_utils.utils import * 
+from .alns_utils.utils import *
 from .alns_utils.destroy_methods import *
 from .alns_utils.repair_methods import *
 import pandas as pd
@@ -25,16 +25,18 @@ import time
 from .alns_utils.vrpc import VRPState
 import os
 import threading
-from .utils import convert_waypointsIDs_to_actions
+from .converter import AUSPEXConverter
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)#DEBUG MEANS PRINTS, INFO MEANS NO PRINT
 
 class MVPR_ALNS_Planner(PlannerBase):
+    planner_key = 'mvrp_alns_planner'
     def __init__(self, kb_client):
         '''
         Knowledge Base
         '''
         self._kb_client = kb_client
+        self._converter = AUSPEXConverter()
 
         '''
         For Parsing the Json File
@@ -81,24 +83,50 @@ class MVPR_ALNS_Planner(PlannerBase):
         max_iterations= 1000
         self._stop_criteria = MaxIterations(max_iterations)
 
+
+    def get_operation_area(self):
+        areas_db = self._kb_client.query(collection='area', key='', value='')
+        if not areas_db:
+            return None, None
+
+        home = None  # to store the 'home' entry
+        data = {
+            "Locations": [],
+            "Lat": [],
+            "Long": [],
+            "Alt": []
+        }
+
+        for area in areas_db:
+            name = area.get('name')
+            points = area.get('points', [])
+
+            if points and len(points[0]) >= 3:
+                centre = [float(x) for x in points[0]]
+            else:
+                centre = []
+
+            if name == 'home':
+                home = area['points'][0] if 'points' in area and len(area['points']) > 0 else None
+                continue
+
+            if name and len(centre) >= 3:
+                data["Locations"].append(name)
+                data["Lat"].append(centre[0])
+                data["Long"].append(centre[1])
+                data["Alt"].append(centre[2])
+
+        df = pd.DataFrame(data).reset_index(drop=True)
+        return home, df
+
     def plan_mission(self, team_id):
-        """
-        Defines a blueprint for the plan method. 
-        This method must be implemented by any subclass of Planner.
-        Returning a auspex_msgs::Plan
-        """
-
         print(f"[INFO]: ALNS Planner Selected for team : {team_id}")
-
-        '''
-        Parsing the Json File
-        '''
         self._home_coordinates = None
         self._melted_df = None
-        # TODO get points form database
-        self._home_coordinates, melted_df = parseJsonFile(file='/home/companion/auspex_params/geographic/areas/areas.json')
-        if melted_df.empty:
-            print("[ERROR]: Could not init ALNS. Shutting down...")
+
+        self._home_coordinates, melted_df = self.get_operation_area()
+        if self._home_coordinates is None or melted_df is None:
+            print("[ERROR]: No home coordinates or melted_df found. Returning...")
             return []
 
         """
@@ -131,11 +159,12 @@ class MVPR_ALNS_Planner(PlannerBase):
         '''
         new_line = {
             'Locations': 'home',
-            'Lat': self._home_coordinates['centre'][0],
-            'Long': self._home_coordinates['centre'][1],
-            'Alt': self._home_coordinates['centre'][2],
+            'Lat': self._home_coordinates[0],
+            'Long': self._home_coordinates[1],
+            'Alt': self._home_coordinates[2],
             'Cluster': -1
         }
+
         melted_df = melted_df._append(new_line, ignore_index=True)
 
         init_vehicle_routes = pd.DataFrame(columns=['Vehicle', 'Route'])
@@ -151,7 +180,7 @@ class MVPR_ALNS_Planner(PlannerBase):
 
         avg_distances_file_path = os.path.join(workspace_dir, "src", 'auspex_planning', "auspex_planning", "planner", "alns_utils", 'average_distances.json')
         avg_distances = load_avg_distances(avg_distances_file_path)
-        initial_state = VRPState(objective_function=objective_function, home_coordinates=self._home_coordinates['centre'], vehicle_routes=init_vehicle_routes, melted_df=melted_df, G=G, avg_distances= avg_distances)
+        initial_state = VRPState(objective_function=objective_function, home_coordinates=self._home_coordinates, vehicle_routes=init_vehicle_routes, melted_df=melted_df, G=G, avg_distances= avg_distances)
 
         self._alns.on_best(initial_state.my_on_best)
         self._alns.on_better(initial_state.my_on_better)
@@ -163,7 +192,7 @@ class MVPR_ALNS_Planner(PlannerBase):
         show_vis = True
         fig_suffix = "figure_description"
         if show_vis:
-            visualize_routes_and_locations(G, init_vehicle_routes, self._home_coordinates['centre'], melted_df, path_prefix=fig_suffix+"_start")
+            visualize_routes_and_locations(G, init_vehicle_routes, self._home_coordinates, melted_df, path_prefix=fig_suffix+"_start")
 
         try:
             '''
@@ -191,13 +220,13 @@ class MVPR_ALNS_Planner(PlannerBase):
                 result.plot_operator_counts()
 
             if show_vis:
-                visualize_routes_and_locations(G, best_solution_vehicles, self._home_coordinates['centre'],  melted_df, path_prefix=fig_suffix +"_solution")
+                visualize_routes_and_locations(G, best_solution_vehicles, self._home_coordinates,  melted_df, path_prefix=fig_suffix +"_solution")
             print(best_solution_vehicles)
 
             actions_list = []
             for index, row in best_solution_vehicles.iterrows():
                 plan_msg = Plan()
-                plan_msg.team_id = team_id 
+                plan_msg.team_id = team_id
 
                 if len(vhcl_dict) == 0:
                     platform_id = "vhcl"+ str(row['Vehicle'])
@@ -205,7 +234,9 @@ class MVPR_ALNS_Planner(PlannerBase):
                     platform_id = vhcl_dict[row['Vehicle']]['platform_id']
 
                 plan_msg.platform_id = platform_id
-                plan_msg.actions = convert_waypointsIDs_to_actions(platform_id, row['Route'])
+                plan_msg.priority = 0
+                plan_msg.tasks = self._converter.convert_plan_mvrp2auspex(platform_id, row['Route'])
+                plan_msg.actions = self._converter.convert_plan_mvrp2auspex(platform_id, row['Route'])
                 actions_list.append(plan_msg)
 
             return actions_list
@@ -213,36 +244,10 @@ class MVPR_ALNS_Planner(PlannerBase):
             print(e)
             return []
 
-
-    def update_state(self, state):
-        """
-        Updates the new state of the platform. Must be implemented by any subclass. 
-
-        Parameters:
-        - state: The new state returned by the platform.
-        """
+    def feedback(self, team_id, feedback_msg):
         pass
 
-    def feedback(self, team_id, platform_id, feedback_msg):
-        """
-        Is invoked by each platform to update th eplanner if necessary according to this feedback.
-
-        Parameters:
-        - team_id: The team the platform is part of.
-        - platform_id: The name of platform, which received feedback
-        - feedback_msg: The feedback_msg
-        """
-        pass
-
-    def result(self, team_id, platform_id, result_msg):
-        """
-        Is invoked by each platform after an action was finished.
-
-        Parameters:
-        - team_id: The team the platform is part of.
-        - platform_id: The name of platform, which received feedback
-        - result_msg: The result_msg
-        """
+    def result(self, team_id, result_msg):
         pass
 
     '''
@@ -292,7 +297,7 @@ class MVPR_ALNS_Planner(PlannerBase):
                 if subgraph.number_of_edges() >0:
                     vehicle_routes[vehicle]= nx.approximation.traveling_salesman_problem(subgraph,cycle=False)
 
-                elif subgraph.number_of_nodes() == 1: 
+                elif subgraph.number_of_nodes() == 1:
                     vehicle_routes[vehicle] = list(subgraph.nodes)
 
         return G, vehicle_routes, melted_df
@@ -358,7 +363,7 @@ class MVPR_ALNS_Planner(PlannerBase):
 
         thread_configs = [
             ([20, 10, 1, 0], 0.8, 3, initial_solution),
-            ([20, 5, 1, 0], 0.4, 3, initial_solution) 
+            ([20, 5, 1, 0], 0.4, 3, initial_solution)
         ]
 
 

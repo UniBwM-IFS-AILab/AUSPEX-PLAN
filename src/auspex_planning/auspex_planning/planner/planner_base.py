@@ -1,28 +1,19 @@
 from abc import ABC, abstractmethod
 
 class PlannerBase(ABC):
+    planner_key = None
 
     @abstractmethod
     def plan_mission(self, team_id):
         """
-        Defines a blueprint for the plan method. 
+        Defines a blueprint for the plan method.
         This method must be implemented by any subclass of Planner.
         Returning a auspex_msgs::Plan
         """
         pass
 
     @abstractmethod
-    def update_state(self, state):
-        """
-        Updates the new state of the platform. Must be implemented by any subclass. 
-
-        Parameters:
-        - state: The new state returned by the platform.
-        """
-        pass
-
-    @abstractmethod
-    def feedback(self, team_id, platform_id, feedback_msg):
+    def feedback(self, team_id, feedback_msg):
         """
         Is invoked by each platform to update th eplanner if necessary according to this feedback.
 
@@ -34,7 +25,7 @@ class PlannerBase(ABC):
         pass
 
     @abstractmethod
-    def result(self, team_id, platform_id, result_msg):
+    def result(self, team_id, result_msg):
         """
         Is invoked by each platform after an action was finished.
 

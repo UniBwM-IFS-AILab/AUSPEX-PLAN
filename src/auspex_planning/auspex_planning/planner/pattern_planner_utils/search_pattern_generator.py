@@ -10,7 +10,7 @@ class SearchPatternGenerator:
         meters = meters/ 1000.0
         if direction == 'lat':
             dlat = meters/111.320
-            return dlat 
+            return dlat
         elif direction == 'lon':
             dlon = meters/(111.320*math.cos(math.pi/4.0))
             return dlon
@@ -28,7 +28,7 @@ class SearchPatternGenerator:
         if fov >= math.pi or fov <= 0:
             print("error: fov between ]0, pi[")
             return []
-        
+
         starting_point = Point(starting_point)
         polygon = Polygon(search_area)
         x_min = polygon.bounds[0]
@@ -49,7 +49,7 @@ class SearchPatternGenerator:
         footprint = 2*flight_height*math.tan(0.5*fov)
 
         sweeping_dist = self.metersToDeltaLatLon(footprint, sweeping_direction)
- 
+
         x_start = x_min - 0.5*sweeping_dist
         y_start = y_min - 0.5*sweeping_dist
 
@@ -58,7 +58,7 @@ class SearchPatternGenerator:
         if sweeping_direction == 'lon':
             num_of_lines = math.floor((x_max - x_min)/sweeping_dist) + 1
             for i in range(1, num_of_lines, 1):
-                x_val = x_start + i*sweeping_dist 
+                x_val = x_start + i*sweeping_dist
                 line = LineString([(x_val, y_min), (x_val, y_max)])
                 sweeping_lines.append(line)
         else: # lat
@@ -103,7 +103,7 @@ class SearchPatternGenerator:
                         lx2 -= turning_dist
                     p1 = Point(lx1, ly[0], flight_height)
                     p2 = Point(lx2, ly[1], flight_height)
-                if counter % 2 == 0: 
+                if counter % 2 == 0:
                     waypoints.append(p1)
                     waypoints.append(p2)
                 else:
@@ -111,10 +111,10 @@ class SearchPatternGenerator:
                     waypoints.append(p1)
                 counter += 1
 
-        self.orderPoints(waypoints, starting_point) 
+        self.orderPoints(waypoints, starting_point)
 
         # comment in for debugging
-        #self._displayPolygon(polygon, sweeping_lines, waypoints, starting_point)
+        # self._displayPolygon(polygon, sweeping_lines, waypoints, starting_point)
 
         return waypoints
 

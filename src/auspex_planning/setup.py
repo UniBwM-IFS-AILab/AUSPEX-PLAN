@@ -12,12 +12,15 @@ if os.path.exists(os.path.join(base_path, 'planner', 'llm_planner_utils')):
     extra_packages.append(package_name + '/planner/llm_planner_utils/aems_utils')
     extra_packages.append(package_name + '/planner/pattern_planner_utils')
     extra_packages.append(package_name + '/planner/alns_utils')
+    extra_packages.append(package_name + '/planner/up_planner_utils')
+    extra_packages.append(package_name + '/planner/goal_utils')
+    extra_packages.append(package_name + '/planner/path_planners')
 
 
 setup(
     name=package_name,
     version='1.0.0',
-    packages=[package_name, package_name+"/planner", package_name+"/action_clients"] + extra_packages,
+    packages=[package_name, package_name+"/planner", package_name+"/interfaces"] + extra_packages,
     data_files=[
         ('share/ament_index/resource_index/packages',['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
@@ -31,7 +34,6 @@ setup(
     maintainer_email='bjoern.doeschl@unibw.de',
     description='AUSPEX package for planning.',
     license='MIT',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'planning_main_node = auspex_planning.planning_main:main',

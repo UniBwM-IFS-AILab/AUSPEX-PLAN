@@ -1,13 +1,13 @@
 import numpy as np
-from .graph import * 
-from .aems_solver import * 
+from .graph import *
+from .aems_solver import *
 from scipy.stats import rv_discrete
 from .fib_solver import *
 from .AlphaVectorPolicy import *
 from .fa_solver import *
 from .utils import *
 import itertools
-import time 
+import time
 
 
 class AEMS_POMDP():
@@ -19,7 +19,7 @@ class AEMS_POMDP():
         self._planner = planner
 
 
-        self.states = states#[list(p) for p in itertools.product(states, states)] #product from all wps 
+        self.states = states#[list(p) for p in itertools.product(states, states)] #product from all wps
         self.actions = actions
         self.observations = ["object detected", "object not detected"]
 
@@ -34,7 +34,7 @@ class AEMS_POMDP():
         self.r_state= -10
         self.r_action= -5
 
-        
+
         self.G = Graph(self.discount_factor)
         self.max_iterations = max_iterations
         self.max_time = max_time
@@ -45,7 +45,7 @@ class AEMS_POMDP():
 
         self.lower_bound = None
         self.upper_bound = None
-        
+
 
     def transition_function(self, s_1, a, s_2):
         cats = list(range(len(self.states)))
@@ -70,16 +70,16 @@ class AEMS_POMDP():
 
         if "Take off" in a:
             p_over_states[s_1] = 1.0
-            return rv_discrete(values=(cats, p_over_states)) 
+            return rv_discrete(values=(cats, p_over_states))
         elif "Continue" in a:
             p_over_states[s_1] = 1.0
-            return rv_discrete(values=(cats, p_over_states)) 
+            return rv_discrete(values=(cats, p_over_states))
         elif "Confirm" in a:
             p_over_states[s_1] = 1.0
             return rv_discrete(values=(cats, p_over_states))
         elif "Ascend" in a:
             p_over_states[s_1] = 1.0
-            return rv_discrete(values=(cats, p_over_states)) 
+            return rv_discrete(values=(cats, p_over_states))
         elif "Descend" in a:
             p_over_states[s_1] = 1.0
             return rv_discrete(values=(cats, p_over_states))
@@ -88,13 +88,13 @@ class AEMS_POMDP():
             return rv_discrete(values=(cats, p_over_states))
 
             if "Land" in a:
-                p_prob = 0.0 
+                p_prob = 0.0
             elif "Hover" in a:
-                p_prob = 0.0 
+                p_prob = 0.0
             elif "Map" in a:#has wp but does not detect
-                p_prob = 0.0 
+                p_prob = 0.0
             elif "single image" in a:
-                p_prob = 0.0 
+                p_prob = 0.0
 
         if p_prob == 0.0:
             p_over_states[s_1] = 1.0
@@ -104,10 +104,10 @@ class AEMS_POMDP():
 
 
     def observation_function(self, o, a, s2):
-        cats = ["object detected", "object not detected"]
+        #cats = ["object detected", "object not detected"]
         cats = [0, 1]
 
-        location = self._planner.available_locations.index(self._planner.environment_description.getGeneralLocation(self.states[s2]))
+        location = self._planner.environment_description.getUniqueLocations().index(self._planner.environment_description.getGeneralLocation(self.states[s2]))
 
         if "Take off" in a:
             p_object_detected_when_in_state = 0.01
@@ -116,13 +116,13 @@ class AEMS_POMDP():
         elif "Continue" in a:
             p_object_detected_when_in_state = 0.01
         elif "Search" in a:
-            mean_detections = []     
+            mean_detections = []
             for object in self._object_list:
                 for color in self._color_list:
                     detections = self._learned_obs_params[0][location][object][color]['N_Detections_T_F']
                     mean_detections.append(detections)
             if mean_detections:
-                mean_detections = sum(mean_detections) / (len(mean_detections)*20.0) 
+                mean_detections = sum(mean_detections) / (len(mean_detections)*20.0)
             else:
                 mean_detections = 0
 
@@ -130,7 +130,7 @@ class AEMS_POMDP():
         elif "Hover" in a:
             p_object_detected_when_in_state = 0.01
         elif "Confirm" in a:
-            mean_detections = []               
+            mean_detections = []
             for object in self._object_list:
                 for color in self._color_list:
                     detections = self._learned_obs_params[0][location][object][color]['N_Detections_T_F']
@@ -157,13 +157,13 @@ class AEMS_POMDP():
         state_reward = self.r_state
         if "openareas1" in state_strings[1]:
             state_reward = 0.0
-            
+
         action_reward = self.r_action
         if "Search" in a:
             action_reward = 0.0
 
         return state_reward + action_reward
-    
+
     '''
     ---END---
     '''
@@ -245,7 +245,7 @@ class AEMS_POMDP():
                     P_o_given_b_a = solver.O(b, a, oi)
                     b_next = self.update_function(b, a, oi)
                     v_next =  self.value_function(solver, b_next, depth+1)
-                    sum_obs += P_o_given_b_a * v_next 
+                    sum_obs += P_o_given_b_a * v_next
 
                 exptected_reward = self.reward_function(b, a)
                 exptected_reward = [exptected_reward, exptected_reward] + self.discount_factor * sum_obs
@@ -256,7 +256,7 @@ class AEMS_POMDP():
 
 
 
-    
+
 
     # def e_circ(self, b, depth):
     #     b_value = self.value_function(b)
@@ -278,7 +278,7 @@ class AEMS_POMDP():
 
 #     while iteration != max_iterations:
 #         max_index = -1
-        
+
 #         backtrack
 
 #         b_current = np.ones(len(states))  # array mit belief values for fringe states
@@ -297,7 +297,7 @@ class AEMS_POMDP():
     #     for  s_2 in self.states:
     #         p_current = self.observation_function(o, a ,s_2)
     #         t = []
-    #         for s in self.states: 
+    #         for s in self.states:
     #             t += self.transition_function(s, a, s_2) * self.belief_state[s]
     #     # return 0.0
 
@@ -309,35 +309,35 @@ class AEMS_POMDP():
 
     #     # Step 1: Compute the unnormalized belief update for each state s_2
     #     for spi, s_2 in enumerate(self.states):
-    #         belief_sum = 0.0   
+    #         belief_sum = 0.0
     #         # Sum over all possible previous states s_1
     #         for si, s_1 in enumerate(self.states):
     #             # Get the transition distribution T(s'|s, a) and belief b(s)
     #             transition_dist = self.transition_function(si, a, spi)  # Returns a distribution over s_2
-    #             transition_prob = pmf(transition_dist,spi)  
-                
+    #             transition_prob = pmf(transition_dist,spi)
+
     #             belief_prob = pmf(b,si)  # Belief distribution b(s_1)
     #             belief_sum += transition_prob * belief_prob
-            
+
     #         # Multiply by observation probability O(o | s', a)
     #         obs_dis= self.observation_function(o, a, spi)
-    #         obs_prob = pmf(transition_dist,spi) 
+    #         obs_prob = pmf(transition_dist,spi)
     #         b_2[s_2] = obs_prob * belief_sum  # Unnormalized belief
     #         # Accumulate total probability for normalization
     #         total_prob += b_2[s_2]
-        
+
     #     # Step 2: Normalize the updated belief b_2
     #     if total_prob > 0:
     #         for s_2 in b_2:
     #             b_2[s_2] /= total_prob  # Normalize each state probability
-        
+
     #     # Step 3: Convert the updated belief into a distribution
     #     states = np.arange(0,2)
     #     probabilities = list(b_2.values())
-        
+
     #     # Creating a new probability distribution for the updated belief
     #     updated_belief = rv_discrete(values=(states, probabilities))
 
     #     #print(updated_belief.__dict__)
-        
+
     #     return updated_belief
