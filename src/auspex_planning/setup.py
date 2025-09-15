@@ -7,14 +7,15 @@ package_name = 'auspex_planning'
 
 base_path = os.path.join(os.getcwd(), package_name)
 extra_packages = []
-if os.path.exists(os.path.join(base_path, 'planner', 'llm_planner_utils')):
-    extra_packages.append(package_name + '/planner/llm_planner_utils')
-    extra_packages.append(package_name + '/planner/llm_planner_utils/aems_utils')
-    extra_packages.append(package_name + '/planner/pattern_planner_utils')
-    extra_packages.append(package_name + '/planner/alns_utils')
-    extra_packages.append(package_name + '/planner/up_planner_utils')
-    extra_packages.append(package_name + '/planner/goal_utils')
-    extra_packages.append(package_name + '/planner/path_planners')
+extra_packages.append(package_name + '/planner/utils/llm_planner_utils')
+extra_packages.append(package_name + '/planner/utils/llm_planner_utils/aems_utils')
+extra_packages.append(package_name + '/planner/utils/pattern_planner_utils')
+extra_packages.append(package_name + '/planner/utils/alns_utils')
+extra_packages.append(package_name + '/planner/utils/up_planner_utils')
+extra_packages.append(package_name + '/planner/utils/goal_utils')
+extra_packages.append(package_name + '/planner/path_planners/')
+extra_packages.append(package_name + '/planner/task_planners/')
+extra_packages.append(package_name + '/planner/utils/')
 
 
 setup(

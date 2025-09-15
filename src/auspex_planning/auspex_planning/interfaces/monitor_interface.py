@@ -1,6 +1,6 @@
 from rclpy import logging
 from auspex_msgs.msg import ExecutorCommand, PlannerCommand, ExecutorState
-from auspex_planning.planner.converter import enum_to_str
+from auspex_planning.planner.utils.converter import enum_to_str
 import traceback
 
 class MonitorInterface:

@@ -3,9 +3,8 @@ import json
 import math
 from rclpy.node import Node
 from geographic_msgs.msg import GeoPoint
-from auspex_planning.planner.pattern_planner_utils.search_pattern_generator import SearchPatternGenerator
-from auspex_planning.planner.planner_base import PlannerBase
-from auspex_planning.planner.converter import AUSPEXConverter
+from auspex_planning.planner.utils.pattern_planner_utils.search_pattern_generator import SearchPatternGenerator
+from auspex_planning.planner.utils.converter import AUSPEXConverter
 from msg_context.loader import Waypoints, Plan
 
 

@@ -2,7 +2,7 @@
 import json
 import rclpy
 from rclpy.node import Node
-from auspex_msgs.srv import ExistsKnowledge, InsertKnowledge, QueryKnowledge, UpdateKnowledge, WriteKnowledge
+from auspex_msgs.srv import DeleteKnowledge, ExistsKnowledge, InsertKnowledge, QueryKnowledge, UpdateKnowledge, WriteKnowledge
 from rclpy.executors import MultiThreadedExecutor
 
 
@@ -15,6 +15,7 @@ class KB_Client(Node):
         self._query_client = self.create_client(QueryKnowledge, '/query_knowledge')
         self._update_client = self.create_client(UpdateKnowledge, '/update_knowledge')
         self._write_client = self.create_client(WriteKnowledge, '/write_knowledge')
+        self._delete_client = self.create_client(DeleteKnowledge, '/delete_knowledge')
 
     def build_json_path(self, field, key, value):
         json_path = ''
@@ -116,6 +117,18 @@ class KB_Client(Node):
         update_request.path = self.build_json_path(field, key, value)
         update_request.value = new_value
         future = self._update_client.call_async(update_request)
+        rclpy.spin_until_future_complete(self, future, executor=self._mte)
+        if future.result() is None:
+            return False
+        return future.result().success
+
+    def delete(self, collection, key='', value=''):
+        while not self._delete_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Waiting for delete client to come online...')
+        delete_request = DeleteKnowledge.Request()
+        delete_request.collection = collection
+        delete_request.path = self.build_json_path('', key, value)
+        future = self._delete_client.call_async(delete_request)
         rclpy.spin_until_future_complete(self, future, executor=self._mte)
         if future.result() is None:
             return False

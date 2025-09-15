@@ -8,24 +8,24 @@ from action_msgs.msg import GoalStatus
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 
-from .planner.mock_planner import PlannerBase # needed for create_planner_from_key
-from .planner.mock_planner import Mock_Planner # needed for create_planner_from_key
-from .planner.pddl_planner import PDDL_Planner # needed for create_planner_from_key
-from .planner.pattern_planner import PatternPlanner # needed for create_planner_from_key
-from .planner.llm_planner import LLM_Planner # needed for create_planner_from_key
-from .planner.mvrp_alns_planner import MVPR_ALNS_Planner # needed for create_planner_from_key
-from .planner.up_planner import UP_Planner # needed for create_planner_from_key
-from .planner.up_mv_planner import UP_MV_Planner # needed for create_planner_from_key
-from .planner.up4ros2_planner import UPF4ROS2_Planner # needed for create_planner_from_key
+from .planner.task_planners.planner_base import PlannerBase # needed for create_planner_from_key
+from .planner.task_planners.mock_planner import Mock_Planner # needed for create_planner_from_key
+from .planner.task_planners.pddl_planner import PDDL_Planner # needed for create_planner_from_key
+from .planner.task_planners.pattern_planner import PatternPlanner # needed for create_planner_from_key
+from .planner.task_planners.llm_planner import LLM_Planner # needed for create_planner_from_key
+from .planner.task_planners.mvrp_alns_planner import MVPR_ALNS_Planner # needed for create_planner_from_key
+from .planner.task_planners.up_planner import UP_Planner # needed for create_planner_from_key
+from .planner.task_planners.up_mv_planner import UP_MV_Planner # needed for create_planner_from_key
+from .planner.task_planners.up4ros2_planner import UPF4ROS2_Planner # needed for create_planner_from_key
 
-from .planner.path_planner import Path_Planner
+from .path_planner import Path_Planner
 
-from .planner.goal_utils.goal_handler import GoalHandler
+from .goal_handler import GoalHandler
 from auspex_msgs.msg import ExecutorCommand, PlannerCommand, PlanStatus
 
-from auspex_planning.interfaces.monitor_interface import MonitorInterface
+from .interfaces.monitor_interface import MonitorInterface
 from auspex_db_client.kb_client import KB_Client
-from .planner.converter import enum_to_str
+from .planner.utils.converter import enum_to_str
 import rosidl_runtime_py
 
 from auspex_msgs.msg import UserCommand
@@ -50,6 +50,7 @@ class PlanningMain(Node):
         super().__init__('main_planner_node')
 
         self._planner_command_subscriber = self.create_subscription(UserCommand,'planner_command', self.planner_command_callback,10)
+        self._add_plan_subscriber = self.create_subscription(Plan, 'add_plan', self.add_plan_callback, 10)
 
         self._monitor_interfaces = {}
 
@@ -65,7 +66,7 @@ class PlanningMain(Node):
 
         self._default_planner = Mock_Planner(self._kb_client)
 
-        self.get_logger().info('Planner Main Ready...')
+        self.get_logger().info('Planner Main Ready with planner_command and add_plan subscribers...')
 
 
     def execute_command(self, team_id: str, execution_command):
@@ -105,6 +106,20 @@ class PlanningMain(Node):
 
     def cancel_done_callback(self, monitor_interface, msg):
         self.get_logger().info("Canceled Plan of team"+ monitor_interface._team_id)
+
+
+    def add_plan_callback(self, plan_msg):
+        """
+        Callback for the add_plan subscriber.
+        Receives a Plan message and inserts it into the Knowledge Base.
+        """
+        self.get_logger().info(f'Received plan for team: {plan_msg.team_id}, platform: {plan_msg.platform_id}')
+        
+        try:
+            self.insert_plan_to_KB([plan_msg])
+            self.get_logger().info(f'Successfully added plan to Knowledge Base for team: {plan_msg.team_id}')
+        except Exception as e:
+            self.get_logger().error(f'Failed to insert plan into Knowledge Base: {e}')
 
 
     def cancel(self, team_id):
@@ -221,7 +236,7 @@ class PlanningMain(Node):
                     self.cancel(team_id)
                     time.sleep(4)
                     task_plans = self._default_planner.plan_rth(team_id)
-                    path_plans = self._path_planner.plan_path(task_plans)
+                    path_plans = self._path_planner.plan_path(team_id, task_plans)
                     self.insert_plan_to_KB(path_plans)
                     time.sleep(1)
                     self.execute_command(team_id, ExecutorCommand.EXECUTE)
