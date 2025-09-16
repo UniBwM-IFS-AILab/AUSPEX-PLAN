@@ -82,7 +82,7 @@ class PayModel():
         closest_location = None
 
         for location_name, location_data in self._operation_areas.items():
-            if location_name == "home":
+            if "home" in location_name:
                 continue
             distance = self.gps_distance(lat, lon, float(location_data['points'][0][0]), float(location_data['points'][0][1]))
             if distance < min_distance:

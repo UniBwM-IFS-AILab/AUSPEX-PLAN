@@ -69,19 +69,20 @@ class PlanningMain(Node):
         self.get_logger().info('Planner Main Ready with planner_command and add_plan subscribers...')
 
 
-    def execute_command(self, team_id: str, execution_command):
+    def execute_command(self, team_id: str, platform_id: str, execution_command):
         """
         Calls the respective executor monitor for the team.
         """
         if not(team_id in self._monitor_interfaces):
             self._monitor_interfaces[team_id] = MonitorInterface(self, team_id, self.feedback_callback, self.result_callback, self.cancel_done_callback)
-        self._monitor_interfaces[team_id].send_command(execution_command)
+        self._monitor_interfaces[team_id].send_command(command=execution_command, platform_id=platform_id)
 
 
     def result_callback(self, monitor_interface, msg):
         self.get_logger().info(f'Result: {enum_to_str(PlannerCommand, msg.command)}')
 
         team_id = monitor_interface._team_id
+        platform_id = ""
 
         if msg.info.success == True:
             self.get_logger().info("Plan for team: " + team_id+" succeeded")
@@ -95,7 +96,7 @@ class PlanningMain(Node):
             if new_plans:
                 self.insert_plan_to_KB(new_plans)
                 if self._EXECUTION_MODE == EXECUTION_MODE.AUTO:
-                    self.execute_command(team_id, ExecutorCommand.EXECUTE)
+                    self.execute_command(team_id, platform_id, ExecutorCommand.EXECUTE)
 
 
     def feedback_callback(self, monitor_interface, feedback_msg):
@@ -122,8 +123,16 @@ class PlanningMain(Node):
             self.get_logger().error(f'Failed to insert plan into Knowledge Base: {e}')
 
 
-    def cancel(self, team_id):
-        if team_id.lower() != "all":
+    def cancel(self, team_id, platform_id=""):
+        if platform_id != "" and team_id != "all":
+            self.get_logger().info("Got Cancel "+platform_id+" Command")
+            # Get the monitor interface for the given team_id
+            monitor_interface = self._monitor_interfaces.get(team_id)
+            if monitor_interface is None:
+                self.get_logger().info(f"[ERROR]: No monitor interface found for team {team_id}. Cannot cancel plan for platform {platform_id}.")
+                return
+            monitor_interface.cancel_plan(platform_id=platform_id)
+        elif team_id.lower() != "all":
             self.get_logger().info("Got Cancel "+team_id+" Command")
             if team_id not in self._monitor_interfaces:
                 self.get_logger().info(f"[ERROR]: No monitor interface found for team {team_id}. Cannot cancel plan.")
@@ -177,6 +186,47 @@ class PlanningMain(Node):
             self.get_logger().info(f"[INFO]: Inserting plan with ID {plan.plan_id} into Knowledge base.")
             self._kb_client.write(collection='plan', entity=plan_json, key='plan_id', value=str(plan.plan_id))
 
+    def delete_plans_for_team(self, team_id: str):
+        """Delete all plans in the Knowledge Base for a given team_id.
+
+        Uses the KB client's delete method with a json path filter on team_id.
+        """
+        if not team_id:
+            self.get_logger().info('[ERROR]: Cannot delete plans. team_id is empty.')
+            return False
+        try:
+            self.get_logger().info(f'[INFO]: Deleting plans for team_id={team_id} from Knowledge Base.')
+            success = self._kb_client.delete(collection='plan', key='team_id', value=str(team_id))
+            if success:
+                self.get_logger().info(f'[INFO]: Successfully deleted plans for team {team_id}.')
+            else:
+                self.get_logger().info(f'[WARN]: No plans deleted (team {team_id} may have none or delete failed).')
+            return success
+        except Exception as e:
+            self.get_logger().error(f'[ERROR]: Exception while deleting plans for team {team_id}: {e}')
+            return False
+
+    def delete_plans_for_platform(self, platform_id: str):
+        """Delete all plans in the Knowledge Base for a given platform_id.
+
+        Uses the KB client's delete method with a json path filter on platform_id.
+        """
+        if not platform_id:
+            self.get_logger().info('[ERROR]: Cannot delete plans. platform_id is empty.')
+            return False
+        try:
+            self.get_logger().info(f'[INFO]: Deleting plans for platform_id={platform_id} from Knowledge Base.')
+            success = self._kb_client.delete(collection='plan', key='platform_id', value=str(platform_id))
+            if success:
+                self.get_logger().info(f'[INFO]: Successfully deleted plans for platform {platform_id}.')
+            else:
+                self.get_logger().info(f'[WARN]: No plans deleted (platform {platform_id} may have none or delete failed).')
+            return success
+        except Exception as e:
+            self.get_logger().error(f'[ERROR]: Exception while deleting plans for platform {platform_id}: {e}')
+            return False
+    
+
 
     def plan(self, team_id):
         engine = self.get_planning_engine(team_id)
@@ -198,12 +248,15 @@ class PlanningMain(Node):
     def planner_command_callback(self, user_command_msg):
         usr_cmd = user_command_msg.user_command
         team_id = user_command_msg.team_id
-        platform_id = user_command_msg.platform_id # Not used yet
-
-        DEFAULT_TEAM_ID = 'drone_team'
+        platform_id = user_command_msg.platform_id 
 
         if team_id == "":
-            team_id = DEFAULT_TEAM_ID
+            rclpy.logging.get_logger("PlanningMain").info("[WARN]: No team ID specified.")
+            return 
+
+        if platform_id == "" and usr_cmd > 10:
+            rclpy.logging.get_logger("PlanningMain").info("[ERROR]: Platform ID must be specified for a platform command.")
+            return
 
         if usr_cmd != 1 and team_id == "all":
             self.get_logger().info("[ERROR]: Team ID 'all' only defined for cancel.")
@@ -211,38 +264,74 @@ class PlanningMain(Node):
 
         try:
             match usr_cmd:
-                case 1: # USER_CANCEL
+                case 1: # USER_CANCEL_TEAM
+                    rclpy.logging.get_logger("PlanningMain").info("Canceling Plan for team: "+team_id)
                     self.cancel(team_id)
-                    #TODO get drones to team id and publish empty plan
-                case 2: # USER_PAUSE
-                    self.execute_command(team_id, ExecutorCommand.PAUSE)
-                case 3: # USER_RESUME
-                    self.execute_command(team_id, ExecutorCommand.CONTINUE)
-                case 4: # USER_START
+                case 2: # USER_PAUSE_TEAM
+                    self.execute_command(team_id=team_id, platform_id="", execution_command=ExecutorCommand.PAUSE)
+                case 3: # USER_RESUME_TEAM
+                    self.execute_command(team_id=team_id, platform_id="", execution_command=ExecutorCommand.CONTINUE)
+                case 4: # USER_START_TEAM
                     self._EXECUTION_MODE = EXECUTION_MODE.AUTO
                     self.plan(team_id)
                     time.sleep(1)
-                    self.execute_command(team_id, ExecutorCommand.EXECUTE)
-                case 5: # USER_ACCEPT
+                    self.execute_command(team_id=team_id, platform_id="", execution_command=ExecutorCommand.EXECUTE)
+                case 5: # USER_ACCEPT_TEAM
                     self._EXECUTION_MODE = EXECUTION_MODE.HITL
-                    self.execute_command(team_id, ExecutorCommand.EXECUTE)
-                case 6: # USER_REJECT
-                    #TODO publish empty plan to KB
-                    pass
-                case 7: # USER_PLAN
+                    self.execute_command(team_id=team_id, platform_id="", execution_command=ExecutorCommand.EXECUTE)
+                case 6: # USER_REJECT_TEAM
+                    self.delete_plans_for_team(team_id)
+                case 7: # USER_PLAN_TEAM
                     self._EXECUTION_MODE = EXECUTION_MODE.HITL
                     self.plan(team_id)
-                case 8: # USER_RTH
-                    self.cancel(team_id)
+                case 8: # USER_RTH_TEAM
+                    rclpy.logging.get_logger("PlanningMain").info("Returning to Home for team: "+team_id)
+                    self.cancel(team_id=team_id)
                     time.sleep(4)
-                    task_plans = self._default_planner.plan_rth(team_id)
+                    task_plans = self._default_planner.plan_rth(team_id=team_id)
                     path_plans = self._path_planner.plan_path(team_id, task_plans)
                     self.insert_plan_to_KB(path_plans)
                     time.sleep(1)
-                    self.execute_command(team_id, ExecutorCommand.EXECUTE)
-                case 9: # USER_TERMINATE
-                    self.cancel(team_id)
-                    # TODO Publish to DRONE to terminate
+                    self.execute_command(team_id=team_id, platform_id="", execution_command=ExecutorCommand.EXECUTE)
+                case 9: # USER_TERMINATE_TEAM
+                    self.execute_command(team_id=team_id, platform_id="", execution_command=ExecutorCommand.TERMINATE)
+                    rclpy.logging.get_logger("PlanningMain").info("Terminating all drones of team: "+team_id)
+                case 10: # USER_KILL_TEAM
+                    self.execute_command(team_id=team_id, platform_id="", execution_command=ExecutorCommand.KILL)
+                    rclpy.logging.get_logger("PlanningMain").info("Killing all drones of team: "+team_id)
+                case 11: # USER_CANCEL_PLATFORM
+                    rclpy.logging.get_logger("PlanningMain").info("Canceling Plan for platform: "+platform_id)
+                    self.cancel(team_id=team_id, platform_id=platform_id)
+                case 12: # USER_PAUSE_PLATFORM
+                    self.execute_command(team_id=team_id, platform_id=platform_id, execution_command=ExecutorCommand.PAUSE)
+                case 13: # USER_RESUME_PLATFORM
+                    self.execute_command(team_id=team_id, platform_id=platform_id, execution_command=ExecutorCommand.CONTINUE)
+                case 14: # USER_START_PLATFORM
+                    rclpy.logging.get_logger("PlanningMain").info("Not implemented yet.")
+                    pass
+                case 15: # USER_ACCEPT_PLATFORM
+                    self._EXECUTION_MODE = EXECUTION_MODE.HITL
+                    self.execute_command(team_id=team_id, platform_id=platform_id, execution_command=ExecutorCommand.EXECUTE)
+                case 16: # USER_REJECT_PLATFORM
+                    self.delete_plans_for_platform(platform_id)
+                case 17: # USER_PLAN_PLATFORM
+                    rclpy.logging.get_logger("PlanningMain").info("Not implemented yet.")
+                    pass
+                case 18: # USER_RTH_PLATFORM
+                    rclpy.logging.get_logger("PlanningMain").info("Returning to Home for platform: "+platform_id)
+                    self.cancel(team_id=team_id, platform_id=platform_id)
+                    time.sleep(4)
+                    task_plans = self._default_planner.plan_rth(team_id=team_id, platform_id=platform_id)
+                    path_plans = self._path_planner.plan_path(team_id, task_plans)
+                    self.insert_plan_to_KB(path_plans)
+                    time.sleep(1)
+                    self.execute_command(team_id=team_id, platform_id=platform_id, execution_command=ExecutorCommand.EXECUTE)
+                case 19: # USER_TERMINATE_PLATFORM
+                    self.execute_command(team_id=team_id, platform_id=platform_id, execution_command=ExecutorCommand.TERMINATE)
+                    rclpy.logging.get_logger("PlanningMain").info("Terminating platform: "+platform_id)
+                case 20: # USER_KILL_PLATFORM
+                    self.execute_command(team_id=team_id, platform_id=platform_id, execution_command=ExecutorCommand.KILL)
+                    rclpy.logging.get_logger("PlanningMain").info("Killing platform: "+platform_id)
                 case _ : # DEFAULT CASE
                     self.get_logger().info("[ERROR]: Unknown command.")
         except Exception as e:

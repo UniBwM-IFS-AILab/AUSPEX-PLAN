@@ -96,7 +96,10 @@ class UP_MV_Planner(PlannerBase):
             ag.add_public_fluent(uav_at)
 
         # === Objects ===
-        locations = ['home', 'openareas0', 'openareas1', 'openareas2']
+        locations = ['openareas0', 'openareas1', 'openareas2']
+        for ag in [agent0, agent1]:
+            locations.append(f"home_{ag.name}")
+
         for loc in locations:
             problem.add_object(Object(loc, Location))
 
@@ -135,11 +138,11 @@ class UP_MV_Planner(PlannerBase):
         for ag in [agent0, agent1]:
             problem.set_initial_value(Dot(ag, landed()), True)
             problem.set_initial_value(Dot(ag, taken_off()), False)
-            problem.set_initial_value(Dot(ag, uav_at(problem.object('home'))), True)
+            problem.set_initial_value(Dot(ag, uav_at(problem.object('home_' + ag.name))), True)
             for loc in locations[1:]:
                 problem.set_initial_value(Dot(ag, uav_at(problem.object(loc))), False)
 
-        problem.set_initial_value(visited(problem.object('home')), True)
+        problem.set_initial_value(visited(problem.object('home_' + ag.name)), True)
         for loc in locations[1:]:
             problem.set_initial_value(visited(problem.object(loc)), False)
 

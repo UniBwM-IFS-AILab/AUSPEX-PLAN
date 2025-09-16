@@ -4,26 +4,26 @@ from rclpy.node import Node
 from auspex_msgs.msg import UserCommand
 import sys
 
-USER_CANCEL = 1
-USER_PAUSE = 2
-USER_RESUME = 3
-USER_START = 4
-USER_ACCEPT = 5
-USER_REJECT = 6
-USER_PLAN = 7
-USER_RTH = 8
-USER_TERMINATE = 9
+USER_CANCEL_TEAM = 1
+USER_PAUSE_TEAM = 2
+USER_RESUME_TEAM = 3
+USER_START_TEAM = 4
+USER_ACCEPT_TEAM = 5
+USER_REJECT_TEAM = 6
+USER_PLAN_TEAM = 7
+USER_RTH_TEAM = 8
+USER_TERMINATE_TEAM = 9
 
 COMMANDS = {
-    "cancel": USER_CANCEL,
-    "pause": USER_PAUSE,
-    "resume": USER_RESUME,
-    "start": USER_START,
-    "accept": USER_ACCEPT,
-    "reject": USER_REJECT,
-    "plan": USER_PLAN,
-    "rth": USER_RTH,
-    "terminate": USER_TERMINATE,
+    "cancel": USER_CANCEL_TEAM,
+    "pause": USER_PAUSE_TEAM,
+    "resume": USER_RESUME_TEAM,
+    "start": USER_START_TEAM,
+    "accept": USER_ACCEPT_TEAM,
+    "reject": USER_REJECT_TEAM,
+    "plan": USER_PLAN_TEAM,
+    "rth": USER_RTH_TEAM,
+    "terminate": USER_TERMINATE_TEAM,
 }
 
 
@@ -40,7 +40,7 @@ class PlannerCommandPublisher(Node):
             if argument:
                 msg.team_id = argument
             else:
-                msg.team_id = ""
+                msg.team_id = "drone_team"  # Default team_id if none provided
             self.publisher_.publish(msg)
             self.get_logger().info(f"Published command: {command} ({msg.user_command}) with argument: {argument if argument else 'None'}\n")
             return True

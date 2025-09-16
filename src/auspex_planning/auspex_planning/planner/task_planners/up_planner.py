@@ -224,7 +224,12 @@ class UP_Planner(PlannerBase):
         current_vhcls.append(uav1)
 
         areas_db = self._kb_client.query(collection='area', key='', value='')
-        waypoints = {area['name']: Object(area['name'], Location) for area in areas_db}
+        waypoints = {}
+        for area in areas_db:
+            if area['name'].startswith('home_'):
+                waypoints['home'] = Object('home', Location)
+            else:
+                waypoints[area['name']] = Object(area['name'], Location)
         waypoints['pois'] = Object('pois', Location)
         waypoints['last_known_position'] = Object('last_known_position', Location)
         for wp in waypoints.values():

@@ -35,7 +35,7 @@ class MonitorInterface:
         self._result_callback = result_callback
         self._cancel_done_callback = cancel_done_callback
 
-    def send_command(self, command):
+    def send_command(self, command, platform_id=""):
         """
         Sends a command from the planner to the monitor.
 
@@ -44,6 +44,7 @@ class MonitorInterface:
         """
         msg = ExecutorCommand()
         msg.command = command
+        msg.platform_id = platform_id
         self._pub.publish(msg)
         self._logger.info(f"Sent command '{enum_to_str(ExecutorCommand, command)}' to executor monitor of team: {self._team_id}.")
 
@@ -104,10 +105,13 @@ class MonitorInterface:
         """
         pass
 
-    def cancel_plan(self):
+    def cancel_plan(self, platform_id=""):
         """
         Cancels the current action
         """
-        if self._executor_status == ExecutorState.STATE_EXECUTING or self._executor_status == ExecutorState.STATE_PAUSED:
-            self.send_command(ExecutorCommand.CANCEL)
+        if platform_id != "":
+            self.send_command(ExecutorCommand.CANCEL, platform_id=platform_id)
+        elif self._executor_status == ExecutorState.STATE_EXECUTING or self._executor_status == ExecutorState.STATE_PAUSED:
+            self.send_command(ExecutorCommand.CANCEL, platform_id=platform_id)
+
 

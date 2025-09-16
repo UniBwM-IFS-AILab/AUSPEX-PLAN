@@ -33,22 +33,33 @@ class Mock_Planner(PlannerBase):
     def result(self, team_id, result_msg):
         pass
 
-    def plan_rth(self, team_id):
+    def plan_rth(self, team_id, platform_id=""):
         rth_template = self.load_mission_from_json(jsonpath=self._auspex_params_path+'return_to_home_and_land.json')[0]
         action_list = []
-        if team_id.lower() != "all":
-            vhcl_dict = self._kb_client.query('platform', 'platform_id', 'team_id', team_id)
-        elif(team_id.lower() == "all"):
-            vhcl_dict = self._kb_client.query('platform', 'platform_id')
 
-        for vhcl in vhcl_dict:
+        if platform_id == "":
+            if team_id.lower() != "all":
+                vhcl_dict = self._kb_client.query('platform', 'platform_id', 'team_id', team_id)
+            elif(team_id.lower() == "all"):
+                vhcl_dict = self._kb_client.query('platform', 'platform_id')
+
+            for vhcl in vhcl_dict:
+                rth_mission_platform = copy.deepcopy(rth_template)
+                rth_mission_platform.platform_id = vhcl['platform_id']
+                rth_mission_platform.team_id = team_id
+                rth_mission_platform.priority = 99
+                for action in rth_mission_platform.tasks:
+                    action.parameters[0].symbol_atom = [vhcl['platform_id']]
+                action_list.append(rth_mission_platform)
+        else:
             rth_mission_platform = copy.deepcopy(rth_template)
-            rth_mission_platform.platform_id = vhcl['platform_id']
+            rth_mission_platform.platform_id = platform_id
             rth_mission_platform.team_id = team_id
-            rth_mission_platform.priority = 10
+            rth_mission_platform.priority = 99
             for action in rth_mission_platform.tasks:
-                action.parameters[0].symbol_atom = [vhcl['platform_id']]
+                action.parameters[0].symbol_atom = [platform_id]
             action_list.append(rth_mission_platform)
+
         return action_list
 
 

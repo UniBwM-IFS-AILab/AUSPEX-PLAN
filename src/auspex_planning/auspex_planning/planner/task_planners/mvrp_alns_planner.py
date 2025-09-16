@@ -108,7 +108,7 @@ class MVPR_ALNS_Planner(PlannerBase):
             else:
                 centre = []
 
-            if name == 'home':
+            if 'home' in name.lower():
                 home = area['points'][0] if 'points' in area and len(area['points']) > 0 else None
                 continue
 

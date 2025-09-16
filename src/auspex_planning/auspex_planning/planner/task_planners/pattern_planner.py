@@ -93,6 +93,7 @@ class PatternPlanner(PlannerBase, Node):
         print("Publishing waypoints...")
         if team_id == 'ul_team':
             self.publish_waypoints(waypoints_dict)
+            plans = self.parse_waypoints2actions(waypoints_dict, team_id)
         else:
             self.publish_waypoints(waypoints_dict)
             plans = self.parse_waypoints2actions(waypoints_dict, team_id)
@@ -119,9 +120,9 @@ class PatternPlanner(PlannerBase, Node):
             if team_id == "ul_team":
                 print("Using default capabilities for ul team respective capabilities are empty.")
                 platform_capabilities = [{
-                    'turning_radius': 100.0,
+                    'turning_radius': 2.0,
                     'platform_class': {'value': 1},
-                    'sensor_caps': [{'fov_vert_max': math.pi / 6.0}]
+                    'sensor_caps': [{'fov_vert_max': 6.0}]
                 }]
 
             if platform_capabilities == []:
@@ -135,32 +136,24 @@ class PatternPlanner(PlannerBase, Node):
             if platform_capabilities.get('turning_radius'):
                 turning_radius = platform_capabilities.get('turning_radius')
             else:
-                if platform_capabilities.get('platform_class') and platform_capabilities.get('platform_class').get('value') == 1:
-                    turning_radius = 100.0
-                else:
-                    turning_radius = 2.0
+                turning_radius = 2.0
 
             if platform_capabilities.get('sensor_caps') and platform_capabilities.get('sensor_caps')[0].get('fov_vert_max'):
-                fov = platform_capabilities.get('sensor_caps')[0].get('fov_vert_max')
+                fov_deg = platform_capabilities.get('sensor_caps')[0].get('fov_vert_max')
             else:
-                if platform_capabilities.get('platform_class') and platform_capabilities.get('platform_class').get('value') == 1:
-                    fov = math.pi / 6.0 # in radians
-                else:
-                    fov = 2*math.pi / 9.0 # 40 degrees in radians
+                fov_deg = 40.0
 
             if not flight_height:
-                if platform_capabilities.get('platform_class') and platform_capabilities.get('platform_class').get('value') == 1:
-                    flight_height = 100.0
-                else:
-                    flight_height = 100.0
+                flight_height = 100.0
 
-            rclpy.logging.get_logger('PatternPlanner').info(f"Computing pattern for platform {platform_id} with starting point {starting_point}, flight height {flight_height}, fov {fov}, turning radius {turning_radius}")
+            rclpy.logging.get_logger('PatternPlanner').info(f"Computing pattern for platform {platform_id} with starting point {starting_point}, flight height {flight_height}, fov {fov_deg}, turning radius {turning_radius}")
 
             sweeping_direction=''
             if team_id == "ul_team":
-                sweeping_direction='lat'
+                sweeping_direction='lon'
 
-            waypoints = self.lawnmower.mow_the_lawn(search_area, starting_point, fov, flight_height, turning_radius, sweeping_direction)
+            fov_rad = math.radians(fov_deg)
+            waypoints = self.lawnmower.mow_the_lawn(search_area, starting_point, fov_rad, flight_height, turning_radius, sweeping_direction)
             waypoints_dict[platform_id] = waypoints
 
         return waypoints_dict
@@ -176,12 +169,15 @@ class PatternPlanner(PlannerBase, Node):
             plan_msg.team_id = team_id
             plan_msg.priority = 0
             plan_msg.tasks = self._converter.convert_plan_pattern2auspex(platform_id, waypoints)
-            plan_msg.actions = self._converter.convert_plan_pattern2auspex(platform_id, waypoints)
             plans.append(plan_msg)
         return plans
 
     def publish_waypoints(self, waypoints_dict):
+        i = 0
         for platform_id, waypoints in waypoints_dict.items():
+            if i > 200:
+                break
+
             msg = Waypoints()
             msg.route_id = platform_id + 'route'
             msg.platform_id = platform_id
@@ -194,3 +190,4 @@ class PatternPlanner(PlannerBase, Node):
                 msg.points.append(ros_point)
 
             self.waypoint_pub.publish(msg)
+            i = i + 1

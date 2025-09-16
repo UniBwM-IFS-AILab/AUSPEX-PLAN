@@ -31,8 +31,7 @@ class Path_Planner():
         for plan in task_plans:
             if plan.platform_id == "":
                 continue
-            if plan.actions != []:
-                continue
+                
             actions = []
 
             for task in plan.tasks:
@@ -59,6 +58,9 @@ class Path_Planner():
                             parameters.extend(new_parameter)
                             continue
                         s_atom = parameter.symbol_atom[0] # From Message Definition, only one symbol_atom is allowed
+
+                        if s_atom == "home": #for not assigned home areas
+                            s_atom = s_atom + "_" + plan.platform_id
 
                         if s_atom in areas:
                             if task.action_name == 'search_area_uav':
@@ -123,12 +125,14 @@ class Path_Planner():
         lat = 0.0
         lon = 0.0
         alt = 0.0
-        if area not in areas:
-            print("[ERROR] Area not found in database: ", area)
+
+
+        if (area == "last_known_position" or "home" in area) and position != 0:
+            print("[ERROR] Manual Search Area can not be searched via search_area_uav")
             return []
 
-        if (area == "last_known_position" or area == "home") and position != 0:
-            print("[ERROR] Manual Search Area can not be searched via search_area_uav")
+        if area not in areas:
+            print("[ERROR] Area not found in database: ", area)
             return []
 
         try:
@@ -139,7 +143,7 @@ class Path_Planner():
             print(f"[ERROR] Failed to extract coordinates for area '{area}', position '{position}': {e}")
             return []
 
-        if area == "home":
+        if "home_" in area:
             if lat == 0.0 and lon == 0.0 and alt == 0.0:
                 print("[ERROR] Home position not set, returning ...")
                 return []
